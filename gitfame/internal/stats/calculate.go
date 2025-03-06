@@ -1,7 +1,7 @@
 package stats
 
 import (
-	"gitlab.com/slon/shad-go/gitfame/internal/CLI"
+	"gitlab.com/slon/shad-go/gitfame/internal/cli"
 	"gitlab.com/slon/shad-go/gitfame/internal/git"
 	"gitlab.com/slon/shad-go/gitfame/pkg/filter"
 	"log"
@@ -21,7 +21,7 @@ type authorStatsHelper struct {
 	Files   int
 }
 
-func CalculateStats(config *CLI.Config) []authorStats {
+func CalculateStats(config *cli.Config) []authorStats {
 	log.Printf("Calculating statistics\n")
 	defer func() {
 		log.Printf("-- Calculating statistics - done\n\n")
