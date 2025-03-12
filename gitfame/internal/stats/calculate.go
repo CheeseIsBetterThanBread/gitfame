@@ -5,6 +5,7 @@ import (
 	"gitlab.com/slon/shad-go/gitfame/internal/git"
 	"gitlab.com/slon/shad-go/gitfame/pkg/filter"
 	"log"
+	"sync"
 )
 
 type authorStats struct {
@@ -16,9 +17,9 @@ type authorStats struct {
 
 type authorStatsHelper struct {
 	Name    string
-	Lines   int
-	Commits map[string]bool
-	Files   int
+	Lines   int32
+	Commits *safeMapBool
+	Files   int32
 }
 
 func CalculateStats(config *cli.Config) []authorStats {
@@ -36,30 +37,38 @@ func CalculateStats(config *cli.Config) []authorStats {
 		config.RestrictTo,
 	)
 
-	statsMap := make(map[string]*authorStatsHelper)
-	for _, file := range filteredFiles {
-		fileStatsPtr := getFileStats(config.Repository, file, config.Revision, config.UseCommitter)
+	statsMap := newSafeMapHelper()
+	var waitGroup = sync.WaitGroup{}
+	for index, file := range filteredFiles {
+		waitGroup.Add(1)
 
-		for author, lines := range fileStatsPtr.Lines {
-			if _, ok := statsMap[author]; !ok {
-				statsMap[author] = &authorStatsHelper{Name: author, Commits: make(map[string]bool)}
-			}
-			statsMap[author].Lines += lines
-			statsMap[author].Files++
+		go func(id int) {
+			log.Printf("Goroutine %d is processing file %s\n", id, file)
+			fileStatsPtr := getFileStats(config.Repository, file, config.Revision, config.UseCommitter)
 
-			for commitHash := range fileStatsPtr.Commits[author] {
-				statsMap[author].Commits[commitHash] = true
+			for author, lines := range fileStatsPtr.Lines {
+				statsMap.Create(author)
+
+				statsMap.IncreaseLines(author, lines)
+				statsMap.IncreaseFiles(author)
+				for commitHash := range fileStatsPtr.Commits[author] {
+					statsMap.LogCommits(author, commitHash)
+				}
 			}
-		}
+
+			log.Printf("-- Goroutine %d finished processing file %s\n", id, file)
+			waitGroup.Done()
+		}(index + 1)
 	}
+	waitGroup.Wait()
 
-	stats := make([]authorStats, 0, len(statsMap))
-	for _, stat := range statsMap {
+	stats := make([]authorStats, 0, len(statsMap.data))
+	for _, stat := range statsMap.data {
 		stats = append(stats, authorStats{
 			Name:    stat.Name,
-			Lines:   stat.Lines,
-			Commits: len(stat.Commits),
-			Files:   stat.Files,
+			Lines:   int(stat.Lines),
+			Commits: stat.Commits.Len(),
+			Files:   int(stat.Files),
 		})
 	}
 
